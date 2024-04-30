@@ -17,7 +17,7 @@ ra_labels = ['RA (FRB)', 'ra (deg)']
 dec_labels = ['Dec (FRB)', 'dec (deg)']
 redshift_labels = ['z (host)', 'redshift', 'z_gal']
 DM_obs_labels = ['DM (pc/cm3)',"dm", 'DM_obs']
-DM_MW_labels = ['DM_ISM',"dm_milky_way", 'DM_MW']
+DM_MW_labels = ['DM_ISM (pc/cm3)',"dm_milky_way", 'DM_MW']
 
 ra = []
 dec = []
@@ -27,6 +27,7 @@ DM_MW = []
 frb_id = []
 for file_path in file_paths:
     df = pd.read_csv(file_path)
+    print(df.keys())
     for keys in ra_labels:
         try:
             aux = np.array(df[keys])
@@ -59,7 +60,8 @@ for file_path in file_paths:
         try:
             aux = np.array(df[keys])
             for i_aux in aux:
-                DM_MW.append(i_aux)
+                print(i_aux)
+                DM_MW.append(float(i_aux))
         except:
             continue
 ra = np.array(ra)
@@ -71,6 +73,9 @@ ra = coord.Angle(ra, unit=units.degree)
 dec = coord.Angle(dec, unit=units.degree)
 ra = ra.radian - np.pi
 dec = dec.radian
+print(DM_MW.shape, DM_obs.shape)
+print(DM_MW)
+print(DM_obs - DM_MW)
 
 sigma8 = 0.834
 h = 0.674
@@ -136,11 +141,11 @@ def gaussian_loglike(params):
     cov_mat = A**2*cov.covariance + np.diag((sigma_host/(1.+z)))**2 + np.diag(sigma_mw*np.ones(len(z)))**2 
     precision_mat = np.linalg.inv(cov_mat)
     log_det_cov = np.linalg.slogdet(cov_mat)[1]
-    delta = DM_obs - DM_mean
+    delta = DM_obs - DM_MW - DM_mean
     quadraticform = np.einsum(
         'i,i', delta, np.einsum('ij,j', precision_mat, delta))
     result = -.5*(log_det_cov) - .5*quadraticform  
-    return result
+    return result*10
 
 from scipy.stats import norm
 from nautilus import Prior
@@ -153,5 +158,5 @@ prior.add_parameter('A', dist=(0.5,10))
 prior.add_parameter('DM_host', dist=(10,500))
 
 
-sampler = Sampler(prior, gaussian_loglike, n_live=100, filepath='sampling_new.hdf5', pool = 20)
+sampler = Sampler(prior, gaussian_loglike, n_live=100, filepath='sampling_new_10.hdf5', pool = 20)
 sampler.run(verbose=True)
