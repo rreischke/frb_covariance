@@ -1,0 +1,8 @@
+setup.py
+frb_cov/__init__.py
+frb_cov/base.py
+frb_cov.egg-info/PKG-INFO
+frb_cov.egg-info/SOURCES.txt
+frb_cov.egg-info/dependency_links.txt
+frb_cov.egg-info/not-zip-safe
+frb_cov.egg-info/top_level.txt
