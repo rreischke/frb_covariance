@@ -145,7 +145,7 @@ def gaussian_loglike(params):
     quadraticform = np.einsum(
         'i,i', delta, np.einsum('ij,j', precision_mat, delta))
     result = -.5*(log_det_cov) - .5*quadraticform  
-    return result*10
+    return result
 
 from scipy.stats import norm
 from nautilus import Prior
@@ -158,5 +158,5 @@ prior.add_parameter('A', dist=(0.5,10))
 prior.add_parameter('DM_host', dist=(10,500))
 
 
-sampler = Sampler(prior, gaussian_loglike, n_live=100, filepath='sampling_new_10.hdf5', pool = 20)
+sampler = Sampler(prior, gaussian_loglike, n_live=100, filepath='sampling_new.hdf5', pool = 20)
 sampler.run(verbose=True)
