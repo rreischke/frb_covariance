@@ -10,5 +10,5 @@ and then
 cd frb_covariance
 pip install .
 ```
-In the file ``/testtest_covariance.ipynb`` you find a small script on how to run the code.
+In the file ``/testtest_covariance.ipynb`` you find a small script on how to run the code. If you use the code, please cite [the Paper](https://ui.adsabs.harvard.edu/abs/2023MNRAS.524.2237R/abstract).
 
