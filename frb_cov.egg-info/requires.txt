@@ -1,0 +1,6 @@
+numpy
+astropy
+pip>=20.0
+scipy>=1.11.0
+matplotlib
+cosmopower

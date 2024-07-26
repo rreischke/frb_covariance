@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: frb_cov
+Version: 1.0
+Summary: Covariance between localised fast radio bursts
+Home-page: 
+Author: Robert Reischke
+Author-email: reischke@posteo.net
+Requires-Dist: numpy
+Requires-Dist: astropy
+Requires-Dist: pip>=20.0
+Requires-Dist: scipy>=1.11.0
+Requires-Dist: matplotlib
+Requires-Dist: cosmopower

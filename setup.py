@@ -13,4 +13,12 @@ setup(name='frb_cov',
       author='Robert Reischke',
       author_email='reischke@posteo.net',
       packages=['frb_cov'],
-      zip_safe=False)
+      zip_safe=False,
+      install_requires=[
+        'numpy',
+        'astropy',
+        'pip>=20.0',
+        'scipy>=1.11.0',
+        'matplotlib',
+        'cosmopower']
+)
