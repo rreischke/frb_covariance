@@ -1,0 +1,11 @@
+.DS_Store
+*.egg
+/build/
+__pycache__
+levin.egg-info
+.vscode
+/plot/
+/data/
+!/data/FRBCat_arXiv2307.03344.csv
+/test/
+!/test/test_covariance.ipynb
