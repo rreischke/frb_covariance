@@ -16,6 +16,7 @@ setup(name='frb_cov',
       zip_safe=False,
       install_requires=[
         'numpy',
+        'tqdm',
         'astropy',
         'pip>=20.0',
         'scipy>=1.11.0',

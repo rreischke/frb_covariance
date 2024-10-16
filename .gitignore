@@ -9,3 +9,4 @@ levin.egg-info
 !/data/FRBCat_arXiv2307.03344.csv
 /test/
 !/test/test_covariance.ipynb
+/local_codes

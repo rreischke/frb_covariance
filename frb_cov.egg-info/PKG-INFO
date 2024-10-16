@@ -6,6 +6,7 @@ Home-page:
 Author: Robert Reischke
 Author-email: reischke@posteo.net
 Requires-Dist: numpy
+Requires-Dist: tqdm
 Requires-Dist: astropy
 Requires-Dist: pip>=20.0
 Requires-Dist: scipy>=1.11.0
