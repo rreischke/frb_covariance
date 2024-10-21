@@ -17,8 +17,28 @@ class covariance_frb_background():
                  power_spec_emu,
                  zet,
                  delta_theta,
-                 flat_sky):
+                 flat_sky = False,
+                 frequency_width = None,
+                 frequency_band = None):
         print("Calculating FRB-Covariance")
+        self.frequency_width = frequency_width
+        self.frequency_bands = frequency_band
+        if cosmo_dict['delta_gamma'] != 0 and (frequency_width == None or frequency_band == None):
+            print("You are asking for the EP breaking term, 'delta_gamma != 0'.")
+            print("Make sure that you specify the frequency width and frequency band (centra value of the frequency) of each FRB in GHz!")
+            print("Specifically specify 'frequency_width = ' and 'frequency_band = ' as keyword arguments in the constructor of the covariance.")
+            print("Both must be arrays of the same length as the number of FRBs.")
+            print("I will proceed by assuming that all FRBs are observed at 1GHz with a bandwidth of 0.5GHz")
+            self.frequency_width = 0.5*np.ones(len(zet))
+            self.frequency_bands = 1.0*np.ones(len(zet))
+
+        self.frequncies_high = np.ones(len(zet))
+        self.frequncies_low = 1.1*np.ones(len(zet))
+        if cosmo_dict['delta_gamma'] != 0:
+            self.frequency_width = np.array(self.frequency_width)
+            self.frequency_bands = np.array(self.frequency_bands)
+            self.frequncies_high = (self.frequency_bands + self.frequency_width/2)
+            self.frequncies_low = (self.frequency_bands - self.frequency_width/2)
         N_interp_chi = 500
         self.flat_sky = flat_sky
         self.delta_theta = delta_theta
@@ -67,7 +87,8 @@ class covariance_frb_background():
           'z_val' : self.spline_z_of_chi(self.chi_interp),}
         self.power_at_z0 = power_spec_emu.predictions_np(params)
         self.spline_Pee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), bias_emu.predictions_np(params) + power_spec_emu.predictions_np(params) ,bounds_error= False, fill_value = None)
-        self.spline_potential = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), power_spec_emu.predictions_np(params)/power_spec_emu.modes**4 ,bounds_error= False, fill_value = None)
+        self.spline_potential = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), power_spec_emu.predictions_np(params) - 4*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
+        self.spline_potential_ee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), .5*bias_emu.predictions_np(params) + power_spec_emu.predictions_np(params)  - 2*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
         self.DM = np.zeros_like(self.zet)
         for z_idx, z_val in enumerate(self.zet):
             self.DM[z_idx] = (integrate.quad(self.weight, 0,
@@ -89,7 +110,7 @@ class covariance_frb_background():
         return result
 
     def weight_wep(self):
-        return 1.5*self.cosmology.Om0/(self.dispersion_constant_times_c*self.chi_H**2)
+        return 1.5*self.cosmology.Om0/(self.dispersion_constant_times_c*self.chi_H**2)*self.cosmo_dict_fiducial['delta_gamma']
 
     def limber_cell(self, ells):
         flat_idx = 0
@@ -103,8 +124,13 @@ class covariance_frb_background():
                 x_values[1,flat_idx] = ki
                 flat_idx +=1
         self.exp = self.spline_Pee((x_values[0,:],x_values[1,:])).reshape((len(chi),len(ells)))
+        self.exp_ep = self.spline_potential((x_values[0,:],x_values[1,:])).reshape((len(chi),len(ells)))
+        self.exp_ep_ee = self.spline_potential_ee((x_values[0,:],x_values[1,:])).reshape((len(chi),len(ells)))
         chi_integrand = self.weight(self.spline_z_of_chi(chi))**2/chi**2*(self.cosmology.efunc(self.spline_z_of_chi(chi))/self.chi_H)**2
-        integrand = 10**self.exp.T*chi_integrand[None, :]
+        chi_integrand_ep = self.weight_wep()**2/chi**2/(1+self.spline_z_of_chi(chi))
+        freq_weight = 1.0/(1/self.frequncies_low**2 - 1/self.frequncies_high**2)
+        freq_weight_squared = freq_weight[:,None] * freq_weight[None, :]
+        integrand = 10**self.exp.T[:, None, None, :]*chi_integrand[None, None, None, :] + (10**self.exp_ep.T[:, None, None, :]*freq_weight_squared[None, :, :, None])*chi_integrand_ep[None,None, None,:] + (10**self.exp_ep_ee.T[:, None, None, :]*(freq_weight_squared**.5)[None, :, :, None])*(2*(chi_integrand_ep*chi_integrand)**.5)[None,None,None,:]
         if len(self.zet) < 100:
             tomo_weighting = np.ones((len(self.zet), len(self.zet), len(chi)))
             for z_idx_i, z_val_i in enumerate(self.zet):
@@ -114,7 +140,7 @@ class covariance_frb_background():
                         index_min_z = z_idx_j
                     indices = np.where(self.spline_z_of_chi(chi)> self.zet[index_min_z])[0]
                     tomo_weighting[z_idx_i, z_idx_j, indices] = np.zeros(len(indices))
-            self.C_ell = simpson(tomo_weighting[None, :, :, :]*integrand[:, None, None, :], chi, axis = -1)
+            self.C_ell = simpson(tomo_weighting[None, :, :, :]*integrand, chi, axis = -1)
         else:
             zet_interpolation = np.linspace(self.zet[0], self.zet[-1], 100)
             tomo_weighting = np.ones((len(zet_interpolation), len(zet_interpolation), len(chi)))
@@ -125,7 +151,7 @@ class covariance_frb_background():
                         index_min_z = z_idx_j
                     indices = np.where(self.spline_z_of_chi(chi)> zet_interpolation[index_min_z])[0]
                     tomo_weighting[z_idx_i, z_idx_j, indices] = np.zeros(len(indices))
-            C_ell = simpson(tomo_weighting[None, :, :, :]*integrand[:, None, None, :], chi, axis = -1)
+            C_ell = simpson(tomo_weighting[None, :, :, :]*integrand, chi, axis = -1)
             self.spline_C_ell = RegularGridInterpolator((np.log(self.ell),zet_interpolation,zet_interpolation), np.log(C_ell) ,bounds_error= False, fill_value = None)
 
     def get_covariance(self):
@@ -164,7 +190,7 @@ class covariance_frb_background():
         x_values[0,:] = np.log(ell_integral)
         for z_idx_i in tqdm(np.arange(len(self.zet))):
             for z_idx_j in range (z_idx_i, len(self.zet)):
-                if self.delta_theta[z_idx_i,z_idx_j] > 10.0/180*np.pi:
+                if self.delta_theta[z_idx_i,z_idx_j] > 20./180*np.pi:
                     continue
                 else:
                     bessel = jv(0,ell_integral*self.delta_theta[z_idx_i,z_idx_j])
