@@ -9,6 +9,8 @@ from astropy import constants
 from scipy.special import jv
 from scipy.special import eval_legendre
 from tqdm import tqdm
+import time as time
+import os
 
 class covariance_frb_background():
     def __init__(self,
@@ -20,7 +22,7 @@ class covariance_frb_background():
                  flat_sky = False,
                  frequency_width = None,
                  frequency_band = None):
-        print("Calculating FRB-Covariance")
+        #print("Calculating FRB-Covariance")
         self.frequency_width = frequency_width
         self.frequency_bands = frequency_band
         if cosmo_dict['delta_gamma'] != 0 and (frequency_width == None or frequency_band == None):
@@ -31,6 +33,12 @@ class covariance_frb_background():
             print("I will proceed by assuming that all FRBs are observed at 1GHz with a bandwidth of 0.5GHz")
             self.frequency_width = 0.5*np.ones(len(zet))
             self.frequency_bands = 1.0*np.ones(len(zet))
+
+        try:
+            aux = np.array(np.loadtxt(cosmo_dict['path_to_f_iGM']))
+            self.f_igm_spline = UnivariateSpline(aux[:,0], aux[:,1], k = 3, s = 0)
+        except:
+            self.f_igm_spline = None
 
         self.frequncies_high = np.ones(len(zet))
         self.frequncies_low = 1.1*np.ones(len(zet))
@@ -65,7 +73,7 @@ class covariance_frb_background():
         self.los_integration_z = np.linspace(
             0,
             np.amax(zet),
-            500)
+            100)
         self.spline_z_of_chi = UnivariateSpline(self.cosmology.comoving_distance(
             self.los_integration_z).value*self.cosmology.h, self.los_integration_z, k=2, s=0, ext=0)
         self.chi = self.cosmology.comoving_distance(
@@ -73,7 +81,10 @@ class covariance_frb_background():
         self.zet = zet
         self.chi_interp = np.geomspace(10, self.chi[-1], N_interp_chi)
         self.zet_interp = np.linspace(0, np.amax(zet), N_interp_chi)
-        
+        try:
+            self.diagonal = cosmo_dict["diagonal"]
+        except:
+            self.diagonal = False
         params = {'Omega_b': [cosmo_dict['omega_b']]*np.ones_like(self.chi_interp),
           'Omega_cdm' : [cosmo_dict['omega_m'] - cosmo_dict['omega_b']]*np.ones_like(self.chi_interp),
           'h' : [cosmo_dict['h']]*np.ones_like(self.chi_interp),
@@ -87,13 +98,14 @@ class covariance_frb_background():
           'z_val' : self.spline_z_of_chi(self.chi_interp),}
         self.power_at_z0 = power_spec_emu.predictions_np(params)
         self.spline_Pee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), bias_emu.predictions_np(params) + power_spec_emu.predictions_np(params) ,bounds_error= False, fill_value = None)
+        self.spline_Pmm = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), power_spec_emu.predictions_np(params) ,bounds_error= False, fill_value = None)
         self.spline_potential = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), power_spec_emu.predictions_np(params) - 4*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
         self.spline_potential_ee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), .5*bias_emu.predictions_np(params) + power_spec_emu.predictions_np(params)  - 2*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
         self.DM = np.zeros_like(self.zet)
         for z_idx, z_val in enumerate(self.zet):
             self.DM[z_idx] = (integrate.quad(self.weight, 0,
                                         z_val)[0])
-        self.ell = np.geomspace(1,10000,100)
+        self.ell = np.geomspace(1,50000,100)
         self.limber_cell(self.ell)
         if self.flat_sky or len(self.zet) >= 100:
             self.get_covariance_flat_sky()
@@ -101,9 +113,13 @@ class covariance_frb_background():
             self.get_covariance()
 
 
+
     def weight(self, z):
-        f_IGM = 0.9  # keep constant for now at redshifts < 1. Can be calculated from https://github.com/FRBs/FRB/blob/main/frb/dm/igm.py as f_diffuse
-        f_He = 0.24  # Helium fraction
+        if self.f_igm_spline:
+            f_IGM = self.f_igm_spline(z)
+        else:     
+            f_IGM =  0.9 #np.interp(z,aux[:,0], aux[:,1])
+        f_He = 0.245  # Helium fraction
         f_H = 1. - f_He
         f_e = (f_H + 1/2. * f_He)  # electron fraction
         result = f_e * f_IGM * self.prefac*(1+z)/self.cosmology.efunc(z)
@@ -130,29 +146,40 @@ class covariance_frb_background():
         chi_integrand_ep = self.weight_wep()**2/chi**2/(1+self.spline_z_of_chi(chi))
         freq_weight = 1.0/(1/self.frequncies_low**2 - 1/self.frequncies_high**2)
         freq_weight_squared = freq_weight[:,None] * freq_weight[None, :]
-        integrand = 10**self.exp.T[:, None, None, :]*chi_integrand[None, None, None, :] + (10**self.exp_ep.T[:, None, None, :]*freq_weight_squared[None, :, :, None])*chi_integrand_ep[None,None, None,:] + (10**self.exp_ep_ee.T[:, None, None, :]*(freq_weight_squared**.5)[None, :, :, None])*(2*(chi_integrand_ep*chi_integrand)**.5)[None,None,None,:]
-        if len(self.zet) < 100:
-            tomo_weighting = np.ones((len(self.zet), len(self.zet), len(chi)))
+        if self.diagonal:
+            integrand = 10**self.exp.T[:, None, :]*chi_integrand[None, None, :] + (10**self.exp_ep.T[:, None, :]*np.diag(freq_weight_squared)[None, :, None])*chi_integrand_ep[None, None,:] + (10**self.exp_ep_ee.T[:, None, :]*(np.diag(freq_weight_squared)**.5)[None, :, None])*(2*(chi_integrand_ep*chi_integrand)**.5)[None,None,:]
+            tomo_weighting = np.ones((len(self.zet), len(chi)))
             for z_idx_i, z_val_i in enumerate(self.zet):
-                for z_idx_j, z_val_j in enumerate(self.zet):
-                    index_min_z = z_idx_i
-                    if z_val_i > z_val_j:
-                        index_min_z = z_idx_j
-                    indices = np.where(self.spline_z_of_chi(chi)> self.zet[index_min_z])[0]
-                    tomo_weighting[z_idx_i, z_idx_j, indices] = np.zeros(len(indices))
-            self.C_ell = simpson(tomo_weighting[None, :, :, :]*integrand, chi, axis = -1)
+                index_min_z = z_idx_i
+                indices = np.where(self.spline_z_of_chi(chi)> self.zet[index_min_z])[0]
+                tomo_weighting[z_idx_i, indices] = np.zeros(len(indices))
+            self.C_ell = simpson(tomo_weighting[None, :, :]*integrand,x = chi, axis = -1)
+
         else:
-            zet_interpolation = np.linspace(self.zet[0], self.zet[-1], 100)
-            tomo_weighting = np.ones((len(zet_interpolation), len(zet_interpolation), len(chi)))
-            for z_idx_i, z_val_i in enumerate(zet_interpolation):
-                for z_idx_j, z_val_j in enumerate(zet_interpolation):
-                    index_min_z = z_idx_i
-                    if z_val_i > z_val_j:
-                        index_min_z = z_idx_j
-                    indices = np.where(self.spline_z_of_chi(chi)> zet_interpolation[index_min_z])[0]
-                    tomo_weighting[z_idx_i, z_idx_j, indices] = np.zeros(len(indices))
-            C_ell = simpson(tomo_weighting[None, :, :, :]*integrand, chi, axis = -1)
-            self.spline_C_ell = RegularGridInterpolator((np.log(self.ell),zet_interpolation,zet_interpolation), np.log(C_ell) ,bounds_error= False, fill_value = None)
+            if len(self.zet) < 100:
+                integrand = 10**self.exp.T[:, None, None, :]*chi_integrand[None, None, None, :] + (10**self.exp_ep.T[:, None, None, :]*freq_weight_squared[None, :, :, None])*chi_integrand_ep[None,None, None,:] + (10**self.exp_ep_ee.T[:, None, None, :]*(freq_weight_squared**.5)[None, :, :, None])*(2*(chi_integrand_ep*chi_integrand)**.5)[None,None,None,:]
+                tomo_weighting = np.ones((len(self.zet), len(self.zet), len(chi)))
+                for z_idx_i, z_val_i in enumerate(self.zet):
+                    for z_idx_j, z_val_j in enumerate(self.zet):
+                        index_min_z = z_idx_i
+                        if z_val_i > z_val_j:
+                            index_min_z = z_idx_j
+                        indices = np.where(self.spline_z_of_chi(chi)> self.zet[index_min_z])[0]
+                        tomo_weighting[z_idx_i, z_idx_j, indices] = np.zeros(len(indices))
+                self.C_ell = simpson(tomo_weighting[None, :, :, :]*integrand,x = chi, axis = -1)
+            else:
+                integrand = 10**self.exp.T[:, None, None, :]*chi_integrand[None, None, None, :] + (10**self.exp_ep.T[:, None, None, :]*freq_weight_squared[None, :, :, None])*chi_integrand_ep[None,None, None,:] + (10**self.exp_ep_ee.T[:, None, None, :]*(freq_weight_squared**.5)[None, :, :, None])*(2*(chi_integrand_ep*chi_integrand)**.5)[None,None,None,:]
+                zet_interpolation = np.linspace(self.zet[0], self.zet[-1], 100)
+                tomo_weighting = np.ones((len(zet_interpolation), len(zet_interpolation), len(chi)))
+                for z_idx_i, z_val_i in enumerate(zet_interpolation):
+                    for z_idx_j, z_val_j in enumerate(zet_interpolation):
+                        index_min_z = z_idx_i
+                        if z_val_i > z_val_j:
+                            index_min_z = z_idx_j
+                        indices = np.where(self.spline_z_of_chi(chi)> zet_interpolation[index_min_z])[0]
+                        tomo_weighting[z_idx_i, z_idx_j, indices] = np.zeros(len(indices))
+                self.C_ell = simpson(tomo_weighting[None, :, :, :]*integrand, x = chi, axis = -1)
+                self.spline_C_ell = RegularGridInterpolator((np.log(self.ell),zet_interpolation,zet_interpolation), np.log(self.C_ell) ,bounds_error= False, fill_value = None)
 
     def get_covariance(self):
         MAX_ELL = 20000
@@ -185,24 +212,30 @@ class covariance_frb_background():
 
     def get_covariance_flat_sky(self):
         self.covariance = np.zeros((len(self.zet), len(self.zet)))
-        ell_integral = np.geomspace(self.ell[0], self.ell[-1], int(1e4))
+        ell_integral = np.geomspace(self.ell[0], self.ell[-1], int(1e5))
         x_values = np.zeros((3,len(ell_integral)))
         x_values[0,:] = np.log(ell_integral)
-        for z_idx_i in tqdm(np.arange(len(self.zet))):
-            for z_idx_j in range (z_idx_i, len(self.zet)):
-                if self.delta_theta[z_idx_i,z_idx_j] > 20./180*np.pi:
-                    continue
-                else:
-                    bessel = jv(0,ell_integral*self.delta_theta[z_idx_i,z_idx_j])
-                    if len(self.zet) < 100:
-                        integrand = np.interp(ell_integral, self.ell, self.C_ell[:,z_idx_i,z_idx_j])*ell_integral*bessel
-                        self.covariance[z_idx_i,z_idx_j] = simpson(integrand,ell_integral)/2.0/np.pi
-                        self.covariance[z_idx_j,z_idx_i] = self.covariance[z_idx_i,z_idx_j]
+        
+        if self.diagonal:
+            for z_idx_i in range(len(self.zet)):
+                integrand = np.interp(ell_integral, self.ell, self.C_ell[:,z_idx_i])*ell_integral
+                self.covariance[z_idx_i,z_idx_i] = simpson(integrand,x = ell_integral)/2.0/np.pi
+        else:
+            for z_idx_i in tqdm(np.arange(len(self.zet))):
+                for z_idx_j in range (z_idx_i, len(self.zet)):    
+                    if self.delta_theta[z_idx_i,z_idx_j] > 20./180*np.pi:
+                        continue
                     else:
-                        x_values[1,:] = self.zet[z_idx_i]*np.ones_like(ell_integral)
-                        x_values[2,:] = self.zet[z_idx_j]*np.ones_like(ell_integral)
-                        integrand = np.exp(self.spline_C_ell((x_values[0,:],x_values[1,:], x_values[2,:]))).reshape(len(ell_integral))*ell_integral*bessel
-                        self.covariance[z_idx_i,z_idx_j] = simpson(integrand,ell_integral)/2.0/np.pi
-                        self.covariance[z_idx_j,z_idx_i] = self.covariance[z_idx_i,z_idx_j]
+                        bessel = jv(0,ell_integral*self.delta_theta[z_idx_i,z_idx_j])
+                        if len(self.zet) < 100:
+                            integrand = np.interp(ell_integral, self.ell, self.C_ell[:,z_idx_i,z_idx_j])*ell_integral*bessel
+                            self.covariance[z_idx_i,z_idx_j] = simpson(integrand,x = ell_integral)/2.0/np.pi
+                            self.covariance[z_idx_j,z_idx_i] = self.covariance[z_idx_i,z_idx_j]
+                        else:
+                            x_values[1,:] = self.zet[z_idx_i]*np.ones_like(ell_integral)
+                            x_values[2,:] = self.zet[z_idx_j]*np.ones_like(ell_integral)
+                            integrand = np.exp(self.spline_C_ell((x_values[0,:],x_values[1,:], x_values[2,:]))).reshape(len(ell_integral))*ell_integral*bessel
+                            self.covariance[z_idx_i,z_idx_j] = simpson(integrand,x =ell_integral)/2.0/np.pi
+                            self.covariance[z_idx_j,z_idx_i] = self.covariance[z_idx_i,z_idx_j]
 
                         
