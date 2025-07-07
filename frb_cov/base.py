@@ -10,6 +10,8 @@ from scipy.special import jv
 from scipy.special import eval_legendre
 from tqdm import tqdm
 import time as time
+import cosmopower as cp
+
 import os
 
 class covariance_frb_background():
@@ -21,7 +23,8 @@ class covariance_frb_background():
                  delta_theta,
                  flat_sky = False,
                  frequency_width = None,
-                 frequency_band = None):
+                 frequency_band = None,
+                 plin_emu = None):
         #print("Calculating FRB-Covariance")
         self.frequency_width = frequency_width
         self.frequency_bands = frequency_band
@@ -64,7 +67,7 @@ class covariance_frb_background():
             Neff=cosmo_dict['neff'],
             m_nu=cosmo_dict['m_nu']*u.eV,
             Tcmb0=cosmo_dict['Tcmb0'])
-        self.chi_H = self.cosmology.hubble_distance.value*self.cosmology.h
+        self.chi_H = self.cosmology.hubble_distance.value*self.cosmology.h            
         m2 = 1/u.m/u.m
         self.prefac = 3.0*constants.c.value / \
             (constants.m_p.value*constants.G.value*8.0*np.pi) * \
@@ -96,11 +99,15 @@ class covariance_frb_background():
           'alpha_M' : [cosmo_dict['alpha_M']]*np.ones_like(self.chi_interp),
           'log10_k_screen' : [np.log10(cosmo_dict['ks'])]*np.ones_like(self.chi_interp),
           'z_val' : self.spline_z_of_chi(self.chi_interp),}
-        self.power_at_z0 = power_spec_emu.predictions_np(params)
-        self.spline_Pee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), bias_emu.predictions_np(params) + power_spec_emu.predictions_np(params) ,bounds_error= False, fill_value = None)
-        self.spline_Pmm = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), power_spec_emu.predictions_np(params) ,bounds_error= False, fill_value = None)
-        self.spline_potential = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), power_spec_emu.predictions_np(params) - 4*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
-        self.spline_potential_ee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), .5*bias_emu.predictions_np(params) + power_spec_emu.predictions_np(params)  - 2*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
+        self.power_at_z = power_spec_emu.predictions_np(params)
+        if plin_emu:
+            plin_aux = plin_emu.predictions_np(params)
+            index = np.argmax(power_spec_emu.modes > 1e-2)
+            self.power_at_z[:,:index] = plin_aux[:,:index]
+        self.spline_Pee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), bias_emu.predictions_np(params) + self.power_at_z ,bounds_error= False, fill_value = None)
+        self.spline_Pmm = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), self.power_at_z ,bounds_error= False, fill_value = None)
+        self.spline_potential = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), self.power_at_z - 4*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
+        self.spline_potential_ee = RegularGridInterpolator((self.chi_interp,np.log(power_spec_emu.modes)), .5*bias_emu.predictions_np(params) + self.power_at_z  - 2*np.log(power_spec_emu.modes) ,bounds_error= False, fill_value = None)
         self.DM = np.zeros_like(self.zet)
         for z_idx, z_val in enumerate(self.zet):
             self.DM[z_idx] = (integrate.quad(self.weight, 0,
@@ -135,7 +142,7 @@ class covariance_frb_background():
         x_values = np.zeros((2,len(ells)*len(chi)))
         for i_chi in range(len(chi)):
             for i_ell in range(len(ells)):    
-                ki = np.log((ells[i_ell] + 0.5)/chi[i_chi])
+                ki = np.log((ells[i_ell] + 0.5)/chi[i_chi]*self.cosmology.h)
                 x_values[0,flat_idx] = chi[i_chi]
                 x_values[1,flat_idx] = ki
                 flat_idx +=1
@@ -148,6 +155,7 @@ class covariance_frb_background():
         freq_weight_squared = freq_weight[:,None] * freq_weight[None, :]
         if self.diagonal:
             integrand = 10**self.exp.T[:, None, :]*chi_integrand[None, None, :] + (10**self.exp_ep.T[:, None, :]*np.diag(freq_weight_squared)[None, :, None])*chi_integrand_ep[None, None,:] + (10**self.exp_ep_ee.T[:, None, :]*(np.diag(freq_weight_squared)**.5)[None, :, None])*(2*(chi_integrand_ep*chi_integrand)**.5)[None,None,:]
+            integrand *= self.cosmology.h**3
             tomo_weighting = np.ones((len(self.zet), len(chi)))
             for z_idx_i, z_val_i in enumerate(self.zet):
                 index_min_z = z_idx_i
