@@ -138,7 +138,7 @@ class covariance_frb_background():
     def limber_cell(self, ells):
         flat_idx = 0
         chi_max = self.cosmology.comoving_distance(np.max(self.zet)).value*self.cosmology.h
-        chi = np.geomspace(1, chi_max, 100)
+        chi = np.geomspace(1, chi_max, 5000)
         x_values = np.zeros((2,len(ells)*len(chi)))
         for i_chi in range(len(chi)):
             for i_ell in range(len(ells)):    
@@ -164,7 +164,7 @@ class covariance_frb_background():
             self.C_ell = simpson(tomo_weighting[None, :, :]*integrand,x = chi, axis = -1)
 
         else:
-            if len(self.zet) < 100:
+            if len(self.zet) < 110:
                 integrand = 10**self.exp.T[:, None, None, :]*chi_integrand[None, None, None, :] + (10**self.exp_ep.T[:, None, None, :]*freq_weight_squared[None, :, :, None])*chi_integrand_ep[None,None, None,:] + (10**self.exp_ep_ee.T[:, None, None, :]*(freq_weight_squared**.5)[None, :, :, None])*(2*(chi_integrand_ep*chi_integrand)**.5)[None,None,None,:]
                 tomo_weighting = np.ones((len(self.zet), len(self.zet), len(chi)))
                 for z_idx_i, z_val_i in enumerate(self.zet):
@@ -235,7 +235,7 @@ class covariance_frb_background():
                         continue
                     else:
                         bessel = jv(0,ell_integral*self.delta_theta[z_idx_i,z_idx_j])
-                        if len(self.zet) < 100:
+                        if len(self.zet) < 110:
                             integrand = np.interp(ell_integral, self.ell, self.C_ell[:,z_idx_i,z_idx_j])*ell_integral*bessel
                             self.covariance[z_idx_i,z_idx_j] = simpson(integrand,x = ell_integral)/2.0/np.pi
                             self.covariance[z_idx_j,z_idx_i] = self.covariance[z_idx_i,z_idx_j]
