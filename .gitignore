@@ -7,7 +7,7 @@ levin.egg-info
 /plot/
 /data/
 !/data/FRBCat_arXiv2307.03344.csv
-/test/
-!/test/test_covariance.ipynb
-!/test/test_fitting_tagn.ipynb
+/feedback_fits/
+!/feedback_fits/test_covariance.ipynb
+!/feedback_fits/test_fitting_tagn.ipynb
 /local_codes

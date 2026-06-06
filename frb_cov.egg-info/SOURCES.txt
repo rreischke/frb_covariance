@@ -2,6 +2,7 @@ README.md
 setup.py
 frb_cov/__init__.py
 frb_cov/base.py
+frb_cov/likelihood.py
 frb_cov.egg-info/PKG-INFO
 frb_cov.egg-info/SOURCES.txt
 frb_cov.egg-info/dependency_links.txt
