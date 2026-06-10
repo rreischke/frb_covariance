@@ -5,8 +5,8 @@ __pycache__
 levin.egg-info
 .vscode
 /plot/
-/data/
 !/data/FRBCat_arXiv2307.03344.csv
+!/data/00.New_FRB_Data.csv
 /feedback_fits/
 !/feedback_fits/test_covariance.ipynb
 !/feedback_fits/test_fitting_tagn.ipynb

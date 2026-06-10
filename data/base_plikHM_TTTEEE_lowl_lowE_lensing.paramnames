@@ -1,0 +1,22 @@
+
+m_nu_chains = []
+m_nu_chains_names = []
+m_nu_chains_parameters = []
+
+
+file_name = "./../chains/output_nautilus_B_m_nu_lcdm.txt"
+m_nu_chains.append(np.array(np.loadtxt(file_name)))
+m_nu_chains_names.append(r"$\mathrm{Legacy}$")
+m_nu_chains_parameters.append(get_parameter_names_in_chain(file_name))
+
+file_name = "./../chains/output_nautilus_B_kids_des_m_nu.txt"
+m_nu_chains.append(np.loadtxt(file_name))
+m_nu_chains_names.append(r"$\mathrm{Legacy+DESY3}$")
+m_nu_chains_parameters.append(get_parameter_names_in_chain(file_name))
+
+file_name = "./../chains/output_nautilus_B_all_lensing_m_nu.txt"
+m_nu_chains.append(np.loadtxt(file_name))
+m_nu_chains_names.append(r"$\mathrm{All\;Lensing}$")
+m_nu_chains_parameters.append(get_parameter_names_in_chain(file_name))
+
+
